@@ -1,0 +1,104 @@
+# ================================================================
+#  compose.apps.yml — Application Layer (agy-cli-auth)
+#  Builds the AGY CLI Auth web app from ./services/app and runs a
+#  sibling `agy-dev` container that hosts the `agy` CLI binary.
+#
+#  Subdomain: ${PROJECT_NAME}.${DOMAIN}
+#
+#  Minimal required env (see .env.example "APPLICATION" section):
+#    APP_PORT, AGYCLI_AUTH_*, FIREBASE_*, PROJECT_NAME, DOMAIN,
+#    CADDY_EMAIL, TINYAUTH_*, LITESTREAM_*
+# ================================================================
+
+services:
+  app:
+    container_name: "main-app"
+    image: "${PROJECT_NAME:-myapp}-app:local"
+    build:
+      context: ./services/app
+      dockerfile: Dockerfile
+    # Compose vẫn ưu tiên giá trị khai báo explicit trong environment bên dưới.
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: "${NODE_ENV:-production}"
+      # App listen port (source of truth: APP_PORT)
+      PORT: "${APP_PORT:-3000}"
+      # ── Map AGYCLI_AUTH_* (in .env) to the unprefixed names the app code uses ──
+      CONTAINER_NAME: "${AGYCLI_AUTH_CONTAINER_NAME:-agy-dev}"
+      AGY_CREDENTIAL_PATH: "${AGYCLI_AUTH_AGY_CREDENTIAL_PATH:-/root/.gemini/antigravity-cli/antigravity-oauth-token}"
+      AGY_SNAPSHOT_ROOTS: "${AGYCLI_AUTH_AGY_SNAPSHOT_ROOTS:-/root}"
+      AGY_SNAPSHOT_OUTPUT_DIR: "${AGYCLI_AUTH_AGY_SNAPSHOT_OUTPUT_DIR:-/app/login-snapshot}"
+      AGY_SNAPSHOT_COPY_LIMIT: "${AGYCLI_AUTH_AGY_SNAPSHOT_COPY_LIMIT:-80}"
+      AGY_SNAPSHOT_MAX_FILE_BYTES: "${AGYCLI_AUTH_AGY_SNAPSHOT_MAX_FILE_BYTES:-52428800}"
+      SESSION_TIMEOUT_MS: "${AGYCLI_AUTH_SESSION_TIMEOUT_MS:-600000}"
+      # ── Firebase Admin SDK ──
+      FIREBASE_SERVICE_ACCOUNT_BASE64: "${AGYCLI_AUTH_FIREBASE_SERVICE_ACCOUNT_BASE64:-}"
+      FIREBASE_PROJECT_ID: "${AGYCLI_AUTH_FIREBASE_PROJECT_ID:-}"
+      FIREBASE_DATABASE_URL: "${AGYCLI_AUTH_FIREBASE_DATABASE_URL:-}"
+      FIREBASE_SERVICE_ACCOUNT_PATH: "/run/secrets/firebase-adminsdk.json"
+    ports:
+      - "127.0.0.1:${APP_HOST_PORT:-3000}:${APP_PORT:-3000}"
+    volumes:
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/logs:/app/logs
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/data:/app/data
+      # App spawns `docker exec agy-dev …` against the host daemon
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Snapshot output (login traces / token captures)
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/login-snapshot:/app/login-snapshot
+      # Firebase service account JSON — mounted as read-only secret
+      - ${AGYCLI_AUTH_FIREBASE_SERVICE_ACCOUNT_HOST_PATH:-./serviceAccount.json}:/run/secrets/firebase-adminsdk.json:ro
+    labels:
+      # Public HTTP sites behind Cloudflare Tunnel.
+      - "caddy=http://${PROJECT_NAME}.${DOMAIN}, http://main.${DOMAIN}, http://${DOMAIN}, http://${PROJECT_NAME_TAILSCALE}.${TAILSCALE_TAILNET_DOMAIN}"
+      - "caddy.forward_auth=tinyauth:${TINYAUTH_PORT:-3000}"
+      - "caddy.forward_auth.uri=/api/auth/caddy"
+      - "caddy.forward_auth.header_up=X-Forwarded-Proto https"
+      - "caddy.forward_auth.copy_headers=Remote-User Remote-Email Remote-Name Remote-Groups"
+      - "caddy.reverse_proxy={{upstreams ${APP_PORT:-3000}}}"
+      # SSE streaming — frontend listens to /api/login/stream/:sessionId
+      - "caddy.reverse_proxy.flush_interval=-1"
+      # Internal HTTPS site for Tailscale / trusted LAN access.
+      - "caddy_1=https://${PROJECT_NAME_TAILSCALE:-myapp}.${TAILSCALE_TAILNET_DOMAIN:-tailnet.local}"
+      - "caddy_1.tls=internal"
+      - "caddy_1.forward_auth=tinyauth:${TINYAUTH_PORT:-3000}"
+      - "caddy_1.forward_auth.uri=/api/auth/caddy"
+      - "caddy_1.forward_auth.header_up=X-Forwarded-Proto https"
+      - "caddy_1.forward_auth.copy_headers=Remote-User Remote-Email Remote-Name Remote-Groups"
+      - "caddy_1.reverse_proxy={{upstreams ${APP_PORT:-3000}}}"
+      - "caddy_1.reverse_proxy.flush_interval=-1"
+    networks: [app_net]
+    depends_on:
+      litestream-restore:
+        condition: service_completed_successfully
+      tinyauth:
+        condition: service_healthy
+      agy-dev:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "sh"
+        - "-c"
+        - "wget -qO- http://localhost:${APP_PORT:-3000}${HEALTH_PATH:-/health} || exit 1"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Sibling container hosting the `agy` CLI ────────────────────────
+  # The main `app` container shells out via `docker exec agy-dev …` to
+  # drive the OAuth login flow inside this image.
+  agy-dev:
+    container_name: "${AGYCLI_AUTH_CONTAINER_NAME:-agy-dev}"
+    image: "${PROJECT_NAME:-myapp}-agy-dev:local"
+    build:
+      context: ./services/agy-dev
+      dockerfile: Dockerfile
+    volumes:
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/agy-dev/gemini:/root/.gemini
+    tty: true
+    stdin_open: true
+    networks: [app_net]
+    restart: unless-stopped

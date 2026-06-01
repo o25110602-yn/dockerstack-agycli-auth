@@ -1,0 +1,16 @@
+{
+  "name": "agy-auth-webapp",
+  "version": "1.0.0",
+  "description": "Web app to automate agy CLI login flow and back up OAuth tokens to Firebase RTDB",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.4.0"
+  }
+}
