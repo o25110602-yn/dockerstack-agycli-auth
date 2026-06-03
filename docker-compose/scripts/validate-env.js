@@ -287,6 +287,7 @@ checkOptional("AGYCLI_AUTH_SESSION_TIMEOUT_MS", "auto-cleanup timeout per login 
   const n = Number(v);
   return Number.isInteger(n) && n >= 60000 ? null : "must be integer >= 60000";
 });
+checkOptional("AGYCLI_SETTINGS_JSON_PATH", "HOST path to auto-create settings.json for agy CLI");
 
 // Firebase: either BASE64 must be set OR a valid host JSON file must exist.
 {

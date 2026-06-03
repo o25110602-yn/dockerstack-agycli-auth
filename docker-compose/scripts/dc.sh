@@ -105,6 +105,11 @@ else
   echo "⚠️  .env not found — using defaults. Run: cp .env.example .env" >&2
 fi
 
+# ── Auto-generate agy settings.json ───────────────────────────────
+if [ -f "$ROOT_DIR/docker-compose/scripts/setup-agy-settings.js" ]; then
+  node "$ROOT_DIR/docker-compose/scripts/setup-agy-settings.js" || true
+fi
+
 # Normalize tags to comma-separated form without spaces.
 if [ -n "${TAILSCALE_TAGS:-}" ]; then
   TAILSCALE_TAGS="$(printf '%s' "$TAILSCALE_TAGS" | tr -d '[:space:]')"
