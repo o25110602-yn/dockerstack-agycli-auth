@@ -1,3 +1,5 @@
+.repomix/**
+.codegraph/**
 project-api.http
 *credentials.json
 -gitignore/**
