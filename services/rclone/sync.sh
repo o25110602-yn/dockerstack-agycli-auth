@@ -99,7 +99,7 @@ run_one_sync_path() {
   echo "  ── path #$IDX  $LOCAL_PATH → $REMOTE_TARGET  ($L_FILES files local)"
 
   set +e
-  rclone --config "$CONFIG_PATH" sync "$LOCAL_PATH" "$REMOTE_TARGET" \
+  rclone --config "$CONFIG_PATH" copy "$LOCAL_PATH" "$REMOTE_TARGET" \
     --log-level "$LOG_LEVEL" \
     --stats 10s \
     --stats-one-line \
